@@ -1,29 +1,40 @@
 import os
 import sys
 import tempfile
+import mimetypes
 from pathlib import Path
-import textwrap
+from html import escape
 
+import requests
 import streamlit as st
-from PIL import Image, ImageOps
-
+from PIL import Image
 
 # ============================================================
-# PROJECT PATHS
+# PROJECT PATH
 # ============================================================
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
-# Make sure Python can find the teammate modules
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+
+# ============================================================
+# TEAMMATE ELA MODULE
+# ============================================================
+
 from image_processing.ela import perform_ela
-from ML_Model.prediction import predict_image
 
 
 # ============================================================
-# PAGE CONFIGURATION
+# CONFIGURATION
+# ============================================================
+
+BACKEND_URL = "http://127.0.0.1:8000/predict"
+
+
+# ============================================================
+# STREAMLIT CONFIGURATION
 # ============================================================
 
 st.set_page_config(
@@ -38,184 +49,396 @@ st.set_page_config(
 # CUSTOM CSS
 # ============================================================
 
-st.markdown(
+st.html(
     """
     <style>
 
-    /* ---------- GLOBAL ---------- */
+    /* =====================================================
+       GLOBAL
+       ===================================================== */
 
     .stApp {
-        background: #f8fafc;
+        background:
+            radial-gradient(
+                circle at top left,
+                rgba(59, 130, 246, 0.10),
+                transparent 35%
+            ),
+            radial-gradient(
+                circle at top right,
+                rgba(168, 85, 247, 0.10),
+                transparent 35%
+            ),
+            #f8fafc;
     }
 
-    .main {
-        padding-top: 1rem;
+    .main .block-container {
+        max-width: 1250px;
+        padding-top: 2rem;
+        padding-bottom: 3rem;
     }
 
-    /* ---------- HEADER ---------- */
 
-    .brand {
-        font-size: 2.4rem;
-        font-weight: 800;
-        letter-spacing: 2px;
-        color: #0f172a;
-        margin-bottom: 0;
-    }
+    /* =====================================================
+       HEADER
+       ===================================================== */
 
-    .brand-accent {
-        color: #2563eb;
-    }
-
-    .subtitle {
-        color: #64748b;
-        font-size: 1rem;
-        margin-top: 0.2rem;
-        margin-bottom: 2rem;
-    }
-
-    /* ---------- CARDS ---------- */
-
-    .info-card {
-        background: white;
-        border: 1px solid #e2e8f0;
-        border-radius: 14px;
-        padding: 1.5rem;
-        margin-bottom: 1rem;
-        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
-    }
-
-    .card-title {
-        color: #0f172a;
-        font-size: 1.1rem;
-        font-weight: 700;
-        margin-bottom: 0.8rem;
-    }
-
-    .card-description {
-        color: #64748b;
-        font-size: 0.92rem;
-        line-height: 1.6;
-    }
-
-    /* ---------- UPLOAD ---------- */
-
-    [data-testid="stFileUploader"] {
-        background: white;
-        border: 2px dashed #bfdbfe;
-        border-radius: 14px;
-        padding: 1rem;
-    }
-
-    [data-testid="stFileUploader"] section {
-        border: none;
-    }
-
-    /* ---------- BUTTON ---------- */
-
-    .stButton > button {
-        width: 100%;
-        border-radius: 10px;
-        border: none;
-        background: #2563eb;
-        color: white;
-        font-weight: 700;
-        padding: 0.75rem 1rem;
-        transition: all 0.2s ease;
-    }
-
-    .stButton > button:hover {
-        background: #1d4ed8;
-        color: white;
-    }
-
-    /* ---------- IMAGE LABEL ---------- */
-
-    .image-label {
-        font-size: 0.9rem;
-        font-weight: 700;
-        color: #334155;
-        margin-bottom: 0.5rem;
-    }
-
-    /* ---------- RESULT ---------- */
-
-    .result-card {
-        border-radius: 16px;
-        padding: 2rem;
+    .tv-header {
         text-align: center;
-        margin-top: 1.5rem;
-        margin-bottom: 1.5rem;
+        padding: 2rem 1rem 1.5rem 1rem;
     }
 
-    .result-tampered {
-        background: #fef2f2;
-        border: 1px solid #fecaca;
+    .tv-logo {
+        display: inline-block;
+        background: linear-gradient(
+            135deg,
+            #2563eb,
+            #7c3aed
+        );
+        color: white;
+        padding: 0.45rem 0.9rem;
+        border-radius: 999px;
+        font-size: 0.82rem;
+        font-weight: 800;
+        letter-spacing: 1.5px;
+        margin-bottom: 1rem;
+        box-shadow: 0 8px 25px rgba(37, 99, 235, 0.25);
     }
 
-    .result-authentic {
-        background: #f0fdf4;
-        border: 1px solid #bbf7d0;
+    .tv-title {
+        font-size: 3.5rem;
+        line-height: 1.05;
+        font-weight: 900;
+        letter-spacing: -2px;
+        margin: 0;
+        color: #0f172a;
     }
 
-    .result-title {
-        font-size: 2rem;
+    .tv-title-gradient {
+        background: linear-gradient(
+            90deg,
+            #2563eb,
+            #7c3aed,
+            #db2777
+        );
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .tv-subtitle {
+        max-width: 720px;
+        margin: 1rem auto 0 auto;
+        color: #64748b;
+        font-size: 1.05rem;
+        line-height: 1.7;
+    }
+
+
+    /* =====================================================
+       INTRO CARD
+       ===================================================== */
+
+    .intro-card {
+        background: rgba(255,255,255,0.92);
+        border: 1px solid #e2e8f0;
+        border-radius: 22px;
+        padding: 1.5rem;
+        margin: 1rem 0 1.5rem 0;
+        box-shadow: 0 12px 35px rgba(15,23,42,0.06);
+    }
+
+    .intro-title {
+        color: #0f172a;
+        font-size: 1.25rem;
         font-weight: 800;
         margin-bottom: 0.5rem;
     }
 
-    .result-confidence {
-        font-size: 1.1rem;
-        color: #475569;
+    .intro-text {
+        color: #64748b;
+        line-height: 1.65;
+        font-size: 0.95rem;
     }
 
-    /* ---------- METRICS ---------- */
+
+    /* =====================================================
+       UPLOAD CARD
+       ===================================================== */
+
+    .upload-card {
+        background: white;
+        border: 2px dashed #93c5fd;
+        border-radius: 22px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 10px 30px rgba(37,99,235,0.07);
+    }
+
+    .upload-title {
+        font-size: 1.2rem;
+        font-weight: 800;
+        color: #0f172a;
+        margin-bottom: 0.3rem;
+    }
+
+    .upload-subtitle {
+        color: #64748b;
+        font-size: 0.9rem;
+        margin-bottom: 1rem;
+    }
+
+
+    /* =====================================================
+       METRIC CARDS
+       ===================================================== */
 
     .metric-card {
         background: white;
         border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        padding: 1rem;
+        border-radius: 18px;
+        padding: 1.2rem;
         text-align: center;
+        min-height: 105px;
+        box-shadow: 0 8px 25px rgba(15,23,42,0.045);
+    }
+
+    .metric-icon {
+        font-size: 1.4rem;
+        margin-bottom: 0.3rem;
     }
 
     .metric-value {
-        font-size: 1.25rem;
-        font-weight: 700;
         color: #0f172a;
+        font-size: 1.05rem;
+        font-weight: 800;
+        word-break: break-word;
     }
 
     .metric-label {
-        font-size: 0.8rem;
         color: #64748b;
-        margin-top: 0.25rem;
+        font-size: 0.78rem;
+        margin-top: 0.3rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
 
-    /* ---------- INFO BOX ---------- */
+
+    /* =====================================================
+       SECTION HEADERS
+       ===================================================== */
+
+    .section-heading {
+        font-size: 1.45rem;
+        font-weight: 850;
+        color: #0f172a;
+        margin: 1.5rem 0 0.8rem 0;
+    }
+
+    .section-description {
+        color: #64748b;
+        font-size: 0.9rem;
+        margin-bottom: 1rem;
+    }
+
+
+    /* =====================================================
+       IMAGE LABEL
+       ===================================================== */
+
+    .image-label {
+        background: #0f172a;
+        color: white;
+        display: inline-block;
+        padding: 0.35rem 0.8rem;
+        border-radius: 8px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        margin-bottom: 0.6rem;
+    }
+
+
+    /* =====================================================
+       ANALYZE BUTTON
+       ===================================================== */
+
+    div.stButton > button {
+        width: 100%;
+        border: none;
+        border-radius: 14px;
+        padding: 0.85rem 1rem;
+        font-size: 1rem;
+        font-weight: 800;
+        color: white;
+        background: linear-gradient(
+            135deg,
+            #2563eb,
+            #7c3aed
+        );
+        box-shadow: 0 10px 25px rgba(79,70,229,0.25);
+        transition: all 0.2s ease;
+    }
+
+    div.stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 14px 30px rgba(79,70,229,0.32);
+    }
+
+
+    /* =====================================================
+       RESULT CARD
+       ===================================================== */
+
+    .result-card {
+        border-radius: 24px;
+        padding: 2rem;
+        margin-top: 1.5rem;
+        text-align: center;
+        border: 2px solid;
+    }
+
+    .result-real {
+        background: linear-gradient(
+            135deg,
+            #ecfdf5,
+            #f0fdf4
+        );
+        border-color: #86efac;
+    }
+
+    .result-tampered {
+        background: linear-gradient(
+            135deg,
+            #fff1f2,
+            #fef2f2
+        );
+        border-color: #fca5a5;
+    }
+
+    .result-icon {
+        font-size: 3rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .result-title {
+        font-size: 2.1rem;
+        font-weight: 900;
+        margin-bottom: 0.5rem;
+    }
+
+    .real-title {
+        color: #15803d;
+    }
+
+    .tampered-title {
+        color: #dc2626;
+    }
+
+    .result-confidence {
+        color: #475569;
+        font-size: 1rem;
+        margin-top: 0.5rem;
+    }
+
+    .result-confidence strong {
+        color: #0f172a;
+        font-size: 1.25rem;
+    }
+
+
+    /* =====================================================
+       PIPELINE
+       ===================================================== */
+
+    .pipeline-card {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 20px;
+        padding: 1.4rem;
+        margin-top: 1.5rem;
+        box-shadow: 0 8px 25px rgba(15,23,42,0.04);
+    }
+
+    .pipeline-title {
+        color: #0f172a;
+        font-size: 1rem;
+        font-weight: 800;
+        margin-bottom: 1rem;
+    }
+
+    .pipeline {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .pipeline-step {
+        background: #eff6ff;
+        color: #1d4ed8;
+        border: 1px solid #bfdbfe;
+        padding: 0.6rem 0.8rem;
+        border-radius: 10px;
+        font-size: 0.8rem;
+        font-weight: 700;
+    }
+
+    .pipeline-arrow {
+        color: #94a3b8;
+        font-weight: 900;
+    }
+
+
+    /* =====================================================
+       INFO BOX
+       ===================================================== */
 
     .info-box {
-        background: #eff6ff;
-        border: 1px solid #bfdbfe;
-        border-radius: 12px;
-        padding: 1rem 1.25rem;
-        color: #1e3a8a;
-        line-height: 1.6;
-        margin-top: 1rem;
+        background: linear-gradient(
+            135deg,
+            #eff6ff,
+            #f5f3ff
+        );
+        border: 1px solid #c7d2fe;
+        border-radius: 18px;
+        padding: 1.2rem;
+        color: #334155;
+        line-height: 1.65;
+        margin-top: 1.5rem;
     }
 
-    /* ---------- FOOTER ---------- */
+    .info-box-title {
+        color: #3730a3;
+        font-weight: 800;
+        margin-bottom: 0.4rem;
+    }
+
+
+    /* =====================================================
+       FOOTER
+       ===================================================== */
 
     .footer {
         text-align: center;
         color: #94a3b8;
         font-size: 0.8rem;
         margin-top: 3rem;
-        padding: 1rem;
+        padding-top: 1.5rem;
         border-top: 1px solid #e2e8f0;
     }
 
+
+    /* =====================================================
+       FILE UPLOADER
+       ===================================================== */
+
+    [data-testid="stFileUploader"] {
+        background: transparent;
+    }
+
     </style>
-    """,
-    unsafe_allow_html=True,
+    """
 )
 
 
@@ -223,49 +446,96 @@ st.markdown(
 # SESSION STATE
 # ============================================================
 
-if "uploaded_image" not in st.session_state:
-    st.session_state["uploaded_image"] = None
-
 if "uploaded_path" not in st.session_state:
-    st.session_state["uploaded_path"] = None
+    st.session_state.uploaded_path = None
+
+if "uploaded_image" not in st.session_state:
+    st.session_state.uploaded_image = None
 
 if "ela_path" not in st.session_state:
-    st.session_state["ela_path"] = None
+    st.session_state.ela_path = None
 
 if "heatmap_path" not in st.session_state:
-    st.session_state["heatmap_path"] = None
+    st.session_state.heatmap_path = None
 
 if "analysis_result" not in st.session_state:
-    st.session_state["analysis_result"] = None
+    st.session_state.analysis_result = None
+
+if "uploaded_filename" not in st.session_state:
+    st.session_state.uploaded_filename = None
 
 
 # ============================================================
 # HEADER
 # ============================================================
 
+st.html(
+    """
+    <div class="tv-header">
+
+        <div class="tv-logo">
+            TRUE VISION • AI FORENSICS
+        </div>
+
+        <h1 class="tv-title">
+            See Beyond the <span class="tv-title-gradient">Pixels.</span>
+        </h1>
+
+        <p class="tv-subtitle">
+            An intelligent image authenticity system that combines
+            Error Level Analysis with Machine Learning to detect
+            possible image manipulation.
+        </p>
+
+    </div>
+    """
+)
+
 
 # ============================================================
 # INTRODUCTION
 # ============================================================
 
-st.markdown(
+st.html(
     """
-    <div class="info-card">
-        <div class="card-title">🔍 Detect Image Manipulation</div>
-        <div class="card-description">
-            Upload an image and True Vision will analyze it using
-            Error Level Analysis (ELA) and a machine-learning model
-            to identify possible image manipulation.
+    <div class="intro-card">
+
+        <div class="intro-title">
+            🔍 Detect Image Manipulation
         </div>
+
+        <div class="intro-text">
+            Upload an image and True Vision will examine its
+            compression-error patterns using ELA and then send
+            the extracted features to our trained Random Forest
+            classifier through the FastAPI backend.
+        </div>
+
     </div>
-    """,
-    unsafe_allow_html=True,
+    """
 )
 
 
 # ============================================================
-# FILE UPLOAD
+# UPLOAD AREA
 # ============================================================
+
+st.html(
+    """
+    <div class="upload-card">
+
+        <div class="upload-title">
+            📤 Upload an Image
+        </div>
+
+        <div class="upload-subtitle">
+            Supported formats: JPG, JPEG, PNG, WEBP
+        </div>
+
+    </div>
+    """
+)
+
 
 uploaded_file = st.file_uploader(
     "Choose an image",
@@ -282,17 +552,18 @@ if uploaded_file is not None:
 
     try:
 
-        # --------------------------------------------------------
-        # Load image for displaying in Streamlit
-        # --------------------------------------------------------
+        # ----------------------------------------------------
+        # Read image
+        # ----------------------------------------------------
 
         image = Image.open(uploaded_file).convert("RGB")
 
-        st.session_state["uploaded_image"] = image
+        st.session_state.uploaded_image = image
+        st.session_state.uploaded_filename = uploaded_file.name
 
-        # --------------------------------------------------------
-        # Save uploaded image to a temporary file
-        # --------------------------------------------------------
+        # ----------------------------------------------------
+        # Save temporary image
+        # ----------------------------------------------------
 
         suffix = Path(uploaded_file.name).suffix.lower()
 
@@ -307,60 +578,88 @@ if uploaded_file is not None:
         temp_input.write(uploaded_file.getbuffer())
         temp_input.close()
 
-        st.session_state["uploaded_path"] = temp_input.name
+        st.session_state.uploaded_path = temp_input.name
 
-        # --------------------------------------------------------
-        # Display file information
-        # --------------------------------------------------------
+        # New upload = clear old prediction
+        st.session_state.analysis_result = None
+
+        # ----------------------------------------------------
+        # File information
+        # ----------------------------------------------------
 
         file_size_kb = len(uploaded_file.getbuffer()) / 1024
+
+        safe_filename = escape(uploaded_file.name)
 
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            st.markdown(
+            st.html(
                 f"""
                 <div class="metric-card">
-                    <div class="metric-value">{uploaded_file.name}</div>
-                    <div class="metric-label">File Name</div>
+                    <div class="metric-icon">📄</div>
+                    <div class="metric-value">
+                        {safe_filename}
+                    </div>
+                    <div class="metric-label">
+                        File Name
+                    </div>
                 </div>
-                """,
-                unsafe_allow_html=True,
+                """
             )
 
         with col2:
-            st.markdown(
+            st.html(
                 f"""
                 <div class="metric-card">
+                    <div class="metric-icon">🖼️</div>
                     <div class="metric-value">
                         {image.width} × {image.height}
                     </div>
-                    <div class="metric-label">Resolution</div>
+                    <div class="metric-label">
+                        Resolution
+                    </div>
                 </div>
-                """,
-                unsafe_allow_html=True,
+                """
             )
 
         with col3:
-            st.markdown(
+            st.html(
                 f"""
                 <div class="metric-card">
+                    <div class="metric-icon">💾</div>
                     <div class="metric-value">
                         {file_size_kb:.1f} KB
                     </div>
-                    <div class="metric-label">File Size</div>
+                    <div class="metric-label">
+                        File Size
+                    </div>
                 </div>
-                """,
-                unsafe_allow_html=True,
+                """
             )
 
-        st.markdown("<br>", unsafe_allow_html=True)
 
-        # --------------------------------------------------------
-        # Generate REAL ELA
-        # --------------------------------------------------------
+        # ====================================================
+        # ELA PROCESSING
+        # ====================================================
 
-        temp_dir = tempfile.mkdtemp(prefix="true_vision_")
+        st.html(
+            """
+            <div class="section-heading">
+                🧪 Image Forensic Analysis
+            </div>
+
+            <div class="section-description">
+                Error Level Analysis highlights areas where
+                compression behaviour may differ from the rest
+                of the image.
+            </div>
+            """
+        )
+
+        temp_dir = tempfile.mkdtemp(
+            prefix="true_vision_"
+        )
 
         ela_output_path = os.path.join(
             temp_dir,
@@ -375,40 +674,39 @@ if uploaded_file is not None:
         try:
 
             perform_ela(
-                st.session_state["uploaded_path"],
+                st.session_state.uploaded_path,
                 ela_output_path,
                 heatmap_path,
                 quality=90,
             )
 
-            st.session_state["ela_path"] = ela_output_path
-            st.session_state["heatmap_path"] = heatmap_path
+            st.session_state.ela_path = ela_output_path
+            st.session_state.heatmap_path = heatmap_path
 
         except Exception as ela_error:
 
-            st.error(
-                f"ELA processing failed: {ela_error}"
+            st.session_state.ela_path = None
+            st.session_state.heatmap_path = None
+
+            st.warning(
+                f"ELA visualization could not be generated: {ela_error}"
             )
 
-            st.session_state["ela_path"] = None
-            st.session_state["heatmap_path"] = None
 
-        # --------------------------------------------------------
-        # Original + ELA Heatmap
-        # --------------------------------------------------------
-
-        st.markdown(
-            '<div class="image-label">Image Analysis</div>',
-            unsafe_allow_html=True,
-        )
+        # ====================================================
+        # ORIGINAL + ELA
+        # ====================================================
 
         image_col, ela_col = st.columns(2)
 
         with image_col:
 
-            st.markdown(
-                '<div class="image-label">Original Image</div>',
-                unsafe_allow_html=True,
+            st.html(
+                """
+                <div class="image-label">
+                    ORIGINAL IMAGE
+                </div>
+                """
             )
 
             st.image(
@@ -418,43 +716,51 @@ if uploaded_file is not None:
 
         with ela_col:
 
-            st.markdown(
-                '<div class="image-label">ELA Heatmap</div>',
-                unsafe_allow_html=True,
+            st.html(
+                """
+                <div class="image-label">
+                    ELA HEATMAP
+                </div>
+                """
             )
 
             if (
-                st.session_state["heatmap_path"]
+                st.session_state.heatmap_path
                 and os.path.exists(
-                    st.session_state["heatmap_path"]
+                    st.session_state.heatmap_path
                 )
             ):
 
                 st.image(
-                    st.session_state["heatmap_path"],
+                    st.session_state.heatmap_path,
                     use_container_width=True,
                 )
 
             else:
 
-                st.warning(
-                    "ELA heatmap could not be generated."
+                st.info(
+                    "ELA heatmap is unavailable for this image."
                 )
 
-        # --------------------------------------------------------
-        # Analysis Button
-        # --------------------------------------------------------
 
-        st.markdown("<br>", unsafe_allow_html=True)
+        # ====================================================
+        # ANALYZE BUTTON
+        # ====================================================
+
+        st.html(
+            """
+            <div style="height: 12px;"></div>
+            """
+        )
 
         analyze_button = st.button(
-            "🔍  Analyze Image",
+            "🔍  Analyze Image Authenticity",
             use_container_width=True,
         )
 
         if analyze_button:
 
-            if not st.session_state["uploaded_path"]:
+            if not st.session_state.uploaded_path:
 
                 st.error(
                     "Please upload an image first."
@@ -462,143 +768,412 @@ if uploaded_file is not None:
 
             else:
 
+                # =================================================
+                # SEND IMAGE TO FASTAPI
+                # =================================================
+
                 try:
 
                     with st.spinner(
-                        "Analyzing image authenticity..."
+                        "Running ELA features and Random Forest analysis..."
                     ):
 
-                        # ------------------------------------------------
-                        # REAL ML PREDICTION
-                        # ------------------------------------------------
-
-                        result = predict_image(
-                            st.session_state["uploaded_path"]
+                        image_path = Path(
+                            st.session_state.uploaded_path
                         )
 
-                        st.session_state[
-                            "analysis_result"
-                        ] = result
+                        content_type, _ = mimetypes.guess_type(
+                            image_path.name
+                        )
 
-                    st.success(
-                        "Analysis completed successfully."
+                        if content_type is None:
+                            content_type = "application/octet-stream"
+
+                        with open(
+                            image_path,
+                            "rb",
+                        ) as image_file:
+
+                            response = requests.post(
+                                BACKEND_URL,
+                                files={
+                                    "file": (
+                                        image_path.name,
+                                        image_file,
+                                        content_type,
+                                    )
+                                },
+                                timeout=60,
+                            )
+
+                        response.raise_for_status()
+
+                        api_result = response.json()
+
+                    # =================================================
+                    # SAVE RESULT
+                    # =================================================
+
+                    prediction = str(
+                        api_result.get(
+                            "prediction",
+                            "UNKNOWN",
+                        )
+                    ).upper()
+
+                    raw_confidence = api_result.get(
+                        "confidence",
+                        0,
                     )
 
-                except Exception as analysis_error:
+                    try:
+                        confidence = float(raw_confidence)
+                    except (TypeError, ValueError):
+                        confidence = 0.0
 
-                    st.session_state[
-                        "analysis_result"
-                    ] = None
+                    # Handle confidence returned as decimal
+                    # e.g. 0.95 -> 95%
+                    if 0 <= confidence <= 1:
+                        confidence *= 100
+
+                    confidence = max(
+                        0.0,
+                        min(confidence, 100.0),
+                    )
+
+                    st.session_state.analysis_result = {
+                        "result": prediction,
+                        "confidence": confidence,
+                        "model_name": api_result.get(
+                            "model",
+                            "Unknown",
+                        ),
+                    }
+
+                    # Force Streamlit to display the result
+                    st.rerun()
+
+                except requests.exceptions.ConnectionError:
 
                     st.error(
-                        f"Analysis failed: {analysis_error}"
+                        "❌ Cannot connect to the FastAPI backend. "
+                        "Please make sure the backend is running on "
+                        "http://127.0.0.1:8000"
+                    )
+
+                except requests.exceptions.Timeout:
+
+                    st.error(
+                        "⏱️ The backend took too long to respond."
+                    )
+
+                except requests.exceptions.HTTPError as http_error:
+
+                    st.error(
+                        f"❌ Backend returned an error: {http_error}"
+                    )
+
+                except ValueError:
+
+                    st.error(
+                        "❌ Backend returned invalid JSON."
+                    )
+
+                except Exception as error:
+
+                    st.error(
+                        f"❌ Analysis failed: {error}"
                     )
 
 
-    except Exception as upload_error:
+        # ====================================================
+        # DISPLAY RESULT
+        # ====================================================
+
+        if st.session_state.analysis_result is not None:
+
+            result_data = st.session_state.analysis_result
+
+            result = str(
+                result_data.get(
+                    "result",
+                    "UNKNOWN",
+                )
+            ).upper()
+
+            confidence = float(
+                result_data.get(
+                    "confidence",
+                    0,
+                )
+            )
+
+            model_name = str(
+                result_data.get(
+                    "model_name",
+                    "Unknown",
+                )
+            )
+
+            # ------------------------------------------------
+            # REAL RESULT
+            # ------------------------------------------------
+
+            if result == "REAL":
+
+                result_class = "result-real"
+                title_class = "real-title"
+                icon = "✓"
+                title = "IMAGE APPEARS AUTHENTIC"
+
+                message = (
+                    "The model found the image more consistent "
+                    "with the real-image patterns learned during training."
+                )
+
+            # ------------------------------------------------
+            # TAMPERED RESULT
+            # ------------------------------------------------
+
+            elif result == "TAMPERED":
+
+                result_class = "result-tampered"
+                title_class = "tampered-title"
+                icon = "⚠️"
+                title = "POSSIBLE TAMPERING DETECTED"
+
+                message = (
+                    "The model found patterns that are more consistent "
+                    "with manipulated images."
+                )
+
+            # ------------------------------------------------
+            # UNKNOWN RESULT
+            # ------------------------------------------------
+
+            else:
+
+                result_class = "result-tampered"
+                title_class = "tampered-title"
+                icon = "❓"
+                title = "UNKNOWN RESULT"
+
+                message = (
+                    "The backend returned a result that the interface "
+                    "does not recognize as REAL or TAMPERED."
+                )
+
+            # =================================================
+            # RESULT CARD
+            # =================================================
+
+            st.html(
+                f"""
+                <div class="result-card {result_class}">
+
+                    <div class="result-icon">
+                        {icon}
+                    </div>
+
+                    <div class="result-title {title_class}">
+                        {escape(title)}
+                    </div>
+
+                    <div class="result-confidence">
+                        {escape(message)}
+                    </div>
+
+                    <div class="result-confidence"
+                         style="margin-top: 1rem;">
+
+                        Confidence:
+                        <strong>
+                            {confidence:.2f}%
+                        </strong>
+
+                    </div>
+
+                    <div class="result-confidence">
+
+                        Model:
+                        <strong>
+                            {escape(model_name)}
+                        </strong>
+
+                    </div>
+
+                </div>
+                """
+            )
+
+            # =================================================
+            # CONFIDENCE
+            # =================================================
+
+            st.html(
+                """
+                <div class="section-heading">
+                    📊 Prediction Confidence
+                </div>
+                """
+            )
+
+            st.progress(
+                min(
+                    max(
+                        confidence / 100.0,
+                        0.0,
+                    ),
+                    1.0,
+                )
+            )
+
+            # =================================================
+            # PIPELINE
+            # =================================================
+
+            st.html(
+                """
+                <div class="pipeline-card">
+
+                    <div class="pipeline-title">
+                        ⚙️ Detection Pipeline
+                    </div>
+
+                    <div class="pipeline">
+
+                        <div class="pipeline-step">
+                            📤 Image Upload
+                        </div>
+
+                        <div class="pipeline-arrow">
+                            →
+                        </div>
+
+                        <div class="pipeline-step">
+                            🧪 ELA Features
+                        </div>
+
+                        <div class="pipeline-arrow">
+                            →
+                        </div>
+
+                        <div class="pipeline-step">
+                            🌲 Random Forest
+                        </div>
+
+                        <div class="pipeline-arrow">
+                            →
+                        </div>
+
+                        <div class="pipeline-step">
+                            🎯 Prediction
+                        </div>
+
+                    </div>
+
+                </div>
+                """
+            )
+
+            # =================================================
+            # IMPORTANT DISCLAIMER
+            # =================================================
+
+            st.html(
+                """
+                <div class="info-box">
+
+                    <div class="info-box-title">
+                        ℹ️ Important
+                    </div>
+
+                    This result is a machine-learning prediction,
+                    not a forensic guarantee. Image compression,
+                    resizing, screenshots, and other processing
+                    can affect ELA-based analysis.
+
+                </div>
+                """
+            )
+
+
+    except Exception as error:
 
         st.error(
-            f"Unable to process the uploaded image: "
-            f"{upload_error}"
+            f"Unable to process the uploaded image: {error}"
         )
 
 
 # ============================================================
-# RESULT SECTION
+# HOW IT WORKS
 # ============================================================
 
-result = st.session_state.get("analysis_result")
+st.html(
+    """
+    <div class="pipeline-card">
 
-if result is not None:
-
-    # Get values FIRST
-    prediction = result.get("result", "UNKNOWN")
-    confidence = float(result.get("confidence", 0))
-    model_name = result.get("model_name", "Machine Learning Model")
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    if prediction == "TAMPERED":
-
-        st.markdown(
-    textwrap.dedent(
-        f"""
-        <div class="result-card result-tampered">
-            <div class="result-title">
-                ⚠ TAMPERED
-            </div>
-            <div class="result-confidence">
-                The model detected possible image manipulation.
-            </div>
-            <br>
-            <div class="result-confidence">
-                Confidence:
-                <strong>{confidence:.2f}%</strong>
-            </div>
-            <div class="result-confidence">
-                Model:
-                <strong>{model_name}</strong>
-            </div>
+        <div class="pipeline-title">
+            💡 How True Vision Works
         </div>
-        """
-    ),
-    unsafe_allow_html=True,
+
+        <div style="
+            color:#64748b;
+            line-height:1.7;
+            font-size:0.9rem;
+        ">
+
+            <b style="color:#2563eb;">1. Upload</b>
+            — Select an image you want to inspect.
+
+            <br><br>
+
+            <b style="color:#7c3aed;">2. ELA</b>
+            — The system recompresses the image and measures
+            differences in compression error levels.
+
+            <br><br>
+
+            <b style="color:#db2777;">3. Feature Extraction</b>
+            — Statistical properties of the ELA image are extracted.
+
+            <br><br>
+
+            <b style="color:#059669;">4. Machine Learning</b>
+            — The extracted features are passed to the trained
+            Random Forest classifier.
+
+            <br><br>
+
+            <b style="color:#dc2626;">5. Result</b>
+            — True Vision reports whether the image is predicted
+            as REAL or TAMPERED together with the model confidence.
+
+        </div>
+
+    </div>
+    """
 )
-    elif prediction == "REAL":
 
-        st.markdown(
-    textwrap.dedent(
-        f"""
-        <div class="result-card result-authentic">
-            <div class="result-title">
-                ✓ AUTHENTIC
-            </div>
-            <div class="result-confidence">
-                No significant manipulation was detected
-                by the trained model.
-            </div>
-            <br>
-            <div class="result-confidence">
-                Confidence:
-                <strong>{confidence:.2f}%</strong>
-            </div>
-            <div class="result-confidence">
-                Model:
-                <strong>{model_name}</strong>
-            </div>
-        </div>
-        """
-    ),
-    unsafe_allow_html=True,
+
+# ============================================================
+# FOOTER
+# ============================================================
+
+st.html(
+    """
+    <div class="footer">
+
+        <b>True Vision</b>
+        &nbsp;•&nbsp;
+        Image Tampering Detection
+        &nbsp;•&nbsp;
+        ELA + Machine Learning
+
+        <br><br>
+
+        Built for Hackathon Problem Statement 7
+
+    </div>
+    """
 )
-    else:
-
-        st.warning(
-            f"Model returned an unexpected result: {prediction}"
-        )
-
-    # Confidence
-    st.markdown(
-        "<div class='image-label'>Model Confidence</div>",
-        unsafe_allow_html=True,
-    )
-
-    st.progress(
-        min(max(confidence / 100, 0.0), 1.0)
-    )
-
-    # Explanation
-    st.markdown(
-        """
-        <div class="info-box">
-            <strong>How does this work?</strong><br>
-            Error Level Analysis compares an image with a
-            JPEG-compressed version to identify regions with
-            unusual compression differences. These ELA
-            characteristics are then analyzed by the trained
-            machine-learning model to classify the image as
-            potentially authentic or tampered.
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
