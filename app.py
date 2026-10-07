@@ -32,11 +32,6 @@ from image_processing.ela import perform_ela
 
 BACKEND_URL = "http://127.0.0.1:8000/predict"
 
-
-# ============================================================
-# STREAMLIT CONFIGURATION
-# ============================================================
-
 st.set_page_config(
     page_title="True Vision | Image Authenticity",
     page_icon="🔍",
@@ -47,6 +42,8 @@ st.set_page_config(
 
 # ============================================================
 # CUSTOM CSS
+# IMPORTANT:
+# We use st.html(), NOT st.markdown(), for custom HTML.
 # ============================================================
 
 st.html(
@@ -536,7 +533,6 @@ st.html(
     """
 )
 
-
 uploaded_file = st.file_uploader(
     "Choose an image",
     type=["jpg", "jpeg", "png", "webp"],
@@ -638,7 +634,6 @@ if uploaded_file is not None:
                 """
             )
 
-
         # ====================================================
         # ELA PROCESSING
         # ====================================================
@@ -692,7 +687,6 @@ if uploaded_file is not None:
                 f"ELA visualization could not be generated: {ela_error}"
             )
 
-
         # ====================================================
         # ORIGINAL + ELA
         # ====================================================
@@ -741,7 +735,6 @@ if uploaded_file is not None:
                 st.info(
                     "ELA heatmap is unavailable for this image."
                 )
-
 
         # ====================================================
         # ANALYZE BUTTON
@@ -814,44 +807,22 @@ if uploaded_file is not None:
                     # SAVE RESULT
                     # =================================================
 
-                    prediction = str(
-                        api_result.get(
+                    st.session_state.analysis_result = {
+                        "result": api_result.get(
                             "prediction",
                             "UNKNOWN",
-                        )
-                    ).upper()
-
-                    raw_confidence = api_result.get(
-                        "confidence",
-                        0,
-                    )
-
-                    try:
-                        confidence = float(raw_confidence)
-                    except (TypeError, ValueError):
-                        confidence = 0.0
-
-                    # Handle confidence returned as decimal
-                    # e.g. 0.95 -> 95%
-                    if 0 <= confidence <= 1:
-                        confidence *= 100
-
-                    confidence = max(
-                        0.0,
-                        min(confidence, 100.0),
-                    )
-
-                    st.session_state.analysis_result = {
-                        "result": prediction,
-                        "confidence": confidence,
+                        ),
+                        "confidence": float(
+                            api_result.get(
+                                "confidence",
+                                0,
+                            )
+                        ),
                         "model_name": api_result.get(
                             "model",
                             "Unknown",
                         ),
                     }
-
-                    # Force Streamlit to display the result
-                    st.rerun()
 
                 except requests.exceptions.ConnectionError:
 
@@ -873,18 +844,11 @@ if uploaded_file is not None:
                         f"❌ Backend returned an error: {http_error}"
                     )
 
-                except ValueError:
-
-                    st.error(
-                        "❌ Backend returned invalid JSON."
-                    )
-
                 except Exception as error:
 
                     st.error(
                         f"❌ Analysis failed: {error}"
                     )
-
 
         # ====================================================
         # DISPLAY RESULT
@@ -894,73 +858,32 @@ if uploaded_file is not None:
 
             result_data = st.session_state.analysis_result
 
-            result = str(
-                result_data.get(
-                    "result",
-                    "UNKNOWN",
-                )
-            ).upper()
+            result = result_data["result"]
+            confidence = result_data["confidence"]
+            model_name = result_data["model_name"]
 
-            confidence = float(
-                result_data.get(
-                    "confidence",
-                    0,
-                )
-            )
+            is_real = result.upper() == "REAL"
 
-            model_name = str(
-                result_data.get(
-                    "model_name",
-                    "Unknown",
-                )
-            )
-
-            # ------------------------------------------------
-            # REAL RESULT
-            # ------------------------------------------------
-
-            if result == "REAL":
+            if is_real:
 
                 result_class = "result-real"
                 title_class = "real-title"
                 icon = "✓"
                 title = "IMAGE APPEARS AUTHENTIC"
-
                 message = (
                     "The model found the image more consistent "
                     "with the real-image patterns learned during training."
                 )
 
-            # ------------------------------------------------
-            # TAMPERED RESULT
-            # ------------------------------------------------
-
-            elif result == "TAMPERED":
+            else:
 
                 result_class = "result-tampered"
                 title_class = "tampered-title"
                 icon = "⚠️"
                 title = "POSSIBLE TAMPERING DETECTED"
-
                 message = (
                     "The model found patterns that are more consistent "
                     "with manipulated images."
-                )
-
-            # ------------------------------------------------
-            # UNKNOWN RESULT
-            # ------------------------------------------------
-
-            else:
-
-                result_class = "result-tampered"
-                title_class = "tampered-title"
-                icon = "❓"
-                title = "UNKNOWN RESULT"
-
-                message = (
-                    "The backend returned a result that the interface "
-                    "does not recognize as REAL or TAMPERED."
                 )
 
             # =================================================
@@ -976,7 +899,7 @@ if uploaded_file is not None:
                     </div>
 
                     <div class="result-title {title_class}">
-                        {escape(title)}
+                        {title}
                     </div>
 
                     <div class="result-confidence">
@@ -997,7 +920,7 @@ if uploaded_file is not None:
 
                         Model:
                         <strong>
-                            {escape(model_name)}
+                            {escape(str(model_name))}
                         </strong>
 
                     </div>
@@ -1007,7 +930,7 @@ if uploaded_file is not None:
             )
 
             # =================================================
-            # CONFIDENCE
+            # CONFIDENCE PROGRESS
             # =================================================
 
             st.html(
@@ -1096,7 +1019,6 @@ if uploaded_file is not None:
                 </div>
                 """
             )
-
 
     except Exception as error:
 
