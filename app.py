@@ -2,6 +2,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+import textwrap
 
 import streamlit as st
 from PIL import Image, ImageOps
@@ -241,35 +242,6 @@ if "analysis_result" not in st.session_state:
 # ============================================================
 # HEADER
 # ============================================================
-
-st.markdown(
-    f"""
-    <div class="result-card result-tampered">
-
-        <div class="result-title">
-            ⚠ TAMPERED
-        </div>
-
-        <div class="result-confidence">
-            The model detected possible image manipulation.
-        </div>
-
-        <br>
-
-        <div class="result-confidence">
-            Confidence:
-            <strong>{confidence:.2f}%</strong>
-        </div>
-
-        <div class="result-confidence">
-            Model:
-            <strong>{model_name}</strong>
-        </div>
-
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
 
 
 # ============================================================
@@ -549,62 +521,56 @@ if result is not None:
     if prediction == "TAMPERED":
 
         st.markdown(
-            f"""
-            <div class="result-card result-tampered">
-                <div class="result-title">
-                    ⚠ TAMPERED
-                </div>
-
-                <div class="result-confidence">
-                    The model detected possible image manipulation.
-                </div>
-
-                <br>
-
-                <div class="result-confidence">
-                    Confidence:
-                    <strong>{confidence:.2f}%</strong>
-                </div>
-
-                <div class="result-confidence">
-                    Model:
-                    <strong>{model_name}</strong>
-                </div>
+    textwrap.dedent(
+        f"""
+        <div class="result-card result-tampered">
+            <div class="result-title">
+                ⚠ TAMPERED
             </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
+            <div class="result-confidence">
+                The model detected possible image manipulation.
+            </div>
+            <br>
+            <div class="result-confidence">
+                Confidence:
+                <strong>{confidence:.2f}%</strong>
+            </div>
+            <div class="result-confidence">
+                Model:
+                <strong>{model_name}</strong>
+            </div>
+        </div>
+        """
+    ),
+    unsafe_allow_html=True,
+)
     elif prediction == "REAL":
 
         st.markdown(
-            f"""
-            <div class="result-card result-authentic">
-                <div class="result-title">
-                    ✓ AUTHENTIC
-                </div>
-
-                <div class="result-confidence">
-                    No significant manipulation was detected
-                    by the trained model.
-                </div>
-
-                <br>
-
-                <div class="result-confidence">
-                    Confidence:
-                    <strong>{confidence:.2f}%</strong>
-                </div>
-
-                <div class="result-confidence">
-                    Model:
-                    <strong>{model_name}</strong>
-                </div>
+    textwrap.dedent(
+        f"""
+        <div class="result-card result-authentic">
+            <div class="result-title">
+                ✓ AUTHENTIC
             </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
+            <div class="result-confidence">
+                No significant manipulation was detected
+                by the trained model.
+            </div>
+            <br>
+            <div class="result-confidence">
+                Confidence:
+                <strong>{confidence:.2f}%</strong>
+            </div>
+            <div class="result-confidence">
+                Model:
+                <strong>{model_name}</strong>
+            </div>
+        </div>
+        """
+    ),
+    unsafe_allow_html=True,
+)
     else:
 
         st.warning(
