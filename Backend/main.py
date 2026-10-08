@@ -269,6 +269,7 @@ def root():
 # ============================================================
 
 @app.post("/predict")
+@app.post("/api/predict")
 async def predict(
     file: UploadFile = File(...)
 ):
