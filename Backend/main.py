@@ -3,7 +3,6 @@ from io import BytesIO
 import base64
 import tempfile
 import shutil
-import sys
 
 import numpy as np
 import joblib
@@ -15,28 +14,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 
 # ============================================================
-# PROJECT PATH
+# BACKEND PATH
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = BASE_DIR.parent
 
-# Allow this file to import modules from the project root
-sys.path.insert(0, str(PROJECT_ROOT))
-
-
-# ============================================================
-# IMPORT EXISTING ELA MODULE
-# ============================================================
-
-from image_processing.ela import perform_ela
-
-
-# ============================================================
-# MODEL PATH
-# ============================================================
-
-MODEL_PATH = PROJECT_ROOT / "model.pkl"
+# IMPORTANT:
+# model.pkl must be inside the Backend folder
+MODEL_PATH = BASE_DIR / "model.pkl"
 
 
 # ============================================================
@@ -78,21 +63,22 @@ app.add_middleware(
 
 
 # ============================================================
-# ELA FEATURES FOR MACHINE LEARNING
+# ELA PROCESSING
 # ============================================================
 
-def extract_ela_features(image_bytes):
+def create_ela_image(image_bytes):
     """
-    Extract the same 14 numerical ELA features used
-    during model training.
+    Create an ELA image using JPEG recompression at quality 90.
     """
 
-    # Open uploaded image
     original = Image.open(
         BytesIO(image_bytes)
     ).convert("RGB")
 
-    # Recompress at JPEG quality 90
+    # --------------------------------------------------------
+    # Recompress image at JPEG quality 90
+    # --------------------------------------------------------
+
     buffer = BytesIO()
 
     original.save(
@@ -107,13 +93,15 @@ def extract_ela_features(image_bytes):
         buffer
     ).convert("RGB")
 
+    # --------------------------------------------------------
     # Calculate pixel difference
+    # --------------------------------------------------------
+
     difference = ImageChops.difference(
         original,
         compressed,
     )
 
-    # Find maximum difference
     extrema = difference.getextrema()
 
     max_difference = max(
@@ -124,12 +112,32 @@ def extract_ela_features(image_bytes):
     if max_difference == 0:
         max_difference = 1
 
-    # Scale ELA difference
+    # --------------------------------------------------------
+    # Scale difference
+    # --------------------------------------------------------
+
     scale = 255.0 / max_difference
 
     ela_image = ImageEnhance.Brightness(
         difference
     ).enhance(scale)
+
+    return ela_image
+
+
+# ============================================================
+# ELA FEATURES FOR MACHINE LEARNING
+# ============================================================
+
+def extract_ela_features(image_bytes):
+    """
+    Extract the exact 14 numerical ELA features
+    used during model training.
+    """
+
+    ela_image = create_ela_image(
+        image_bytes
+    )
 
     # Convert to grayscale
     gray_image = ela_image.convert("L")
@@ -139,9 +147,9 @@ def extract_ela_features(image_bytes):
         dtype=np.float32,
     )
 
-    # ========================================================
-    # 14 FEATURES
-    # ========================================================
+    # --------------------------------------------------------
+    # EXACT 14 FEATURES USED DURING TRAINING
+    # --------------------------------------------------------
 
     features = [
         pixels.mean(),
@@ -171,11 +179,8 @@ def extract_ela_features(image_bytes):
 
 def generate_ela_heatmap(image_bytes):
     """
-    Generate the actual ELA heatmap using the existing
-    image_processing/ela.py module.
-
-    The resulting JPEG is converted to Base64 so that
-    the Next.js frontend can display it directly.
+    Generate ELA visualization and return it as
+    a Base64 data URL for the Next.js frontend.
     """
 
     temp_dir = Path(
@@ -187,40 +192,29 @@ def generate_ela_heatmap(image_bytes):
     try:
 
         # ----------------------------------------------------
-        # Temporary file paths
+        # Create ELA image
         # ----------------------------------------------------
 
-        input_path = temp_dir / "input.jpg"
-
-        ela_output_path = (
-            temp_dir / "ela_output.jpg"
+        ela_image = create_ela_image(
+            image_bytes
         )
+
+        # ----------------------------------------------------
+        # Save temporary JPEG
+        # ----------------------------------------------------
 
         heatmap_path = (
             temp_dir / "ela_heatmap.jpg"
         )
 
-        # ----------------------------------------------------
-        # Save uploaded image
-        # ----------------------------------------------------
-
-        input_path.write_bytes(
-            image_bytes
-        )
-
-        # ----------------------------------------------------
-        # Run existing ELA implementation
-        # ----------------------------------------------------
-
-        perform_ela(
-            str(input_path),
-            str(ela_output_path),
-            str(heatmap_path),
+        ela_image.save(
+            heatmap_path,
+            format="JPEG",
             quality=90,
         )
 
         # ----------------------------------------------------
-        # Read generated heatmap
+        # Read generated image
         # ----------------------------------------------------
 
         heatmap_bytes = heatmap_path.read_bytes()
@@ -239,10 +233,6 @@ def generate_ela_heatmap(image_bytes):
         )
 
     finally:
-
-        # ----------------------------------------------------
-        # Remove temporary directory
-        # ----------------------------------------------------
 
         shutil.rmtree(
             temp_dir,
@@ -274,23 +264,23 @@ async def predict(
     file: UploadFile = File(...)
 ):
 
-    # ========================================================
-    # READ UPLOADED IMAGE
-    # ========================================================
+    # --------------------------------------------------------
+    # Read uploaded image
+    # --------------------------------------------------------
 
     image_bytes = await file.read()
 
-    # ========================================================
-    # EXTRACT ELA FEATURES
-    # ========================================================
+    # --------------------------------------------------------
+    # Extract ELA features
+    # --------------------------------------------------------
 
     features = extract_ela_features(
         image_bytes
     )
 
-    # ========================================================
-    # APPLY SCALER
-    # ========================================================
+    # --------------------------------------------------------
+    # Apply scaler if required
+    # --------------------------------------------------------
 
     if scaler is not None:
 
@@ -298,17 +288,17 @@ async def predict(
             features
         )
 
-    # ========================================================
-    # MODEL PREDICTION
-    # ========================================================
+    # --------------------------------------------------------
+    # Model prediction
+    # --------------------------------------------------------
 
     prediction = model.predict(
         features
     )[0]
 
-    # ========================================================
-    # PREDICTION PROBABILITIES
-    # ========================================================
+    # --------------------------------------------------------
+    # Prediction probability
+    # --------------------------------------------------------
 
     probabilities = model.predict_proba(
         features
@@ -318,21 +308,18 @@ async def predict(
         probabilities[prediction] * 100
     )
 
-    # ========================================================
-    # CONVERT LABEL TO RESULT
-    # ========================================================
+    # --------------------------------------------------------
+    # Convert prediction to label
+    # --------------------------------------------------------
 
     if prediction == 0:
-
         result = "REAL"
-
     else:
-
         result = "TAMPERED"
 
-    # ========================================================
-    # GENERATE ELA HEATMAP
-    # ========================================================
+    # --------------------------------------------------------
+    # Generate ELA visualization
+    # --------------------------------------------------------
 
     try:
 
@@ -345,12 +332,11 @@ async def predict(
     except Exception as error:
 
         ela_image = None
-
         ela_error = str(error)
 
-    # ========================================================
-    # RETURN RESPONSE
-    # ========================================================
+    # --------------------------------------------------------
+    # Return result
+    # --------------------------------------------------------
 
     return {
         "filename": file.filename,
